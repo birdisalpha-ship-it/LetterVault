@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  APPLICANT
+  RECOMMENDER
+  INSTITUTION_ADMIN
+}
+
+enum Purpose {
+  ACADEMIC
+  EMPLOYMENT
+  HOUSING
+  OTHER
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  COMPLETED
+  CANCELLED
+}
+
+enum Visibility {
+  OPEN
+  CONFIDENTIAL
+}
+
+enum UsageType {
+  ONE_TIME
+  TIME_LIMITED
+  ONGOING
+}
+
+enum SubmissionStatus {
+  DELIVERED
+  VIEWED
+  ARCHIVED
+}
+
+enum InstitutionType {
+  COLLEGE
+  EMPLOYER
+  HOUSING
+  OTHER
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  password      String?
+  roles         Role[]    @default([APPLICANT])
+  title         String?
+  affiliation   String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  sentRequests      RecommendationRequest[] @relation("ApplicantRequests")
+  receivedRequests  RecommendationRequest[] @relation("RecommenderRequests")
+  writtenLetters    Letter[]                @relation("RecommenderLetters")
+  applicantLetters  Letter[]                @relation("ApplicantLetters")
+  submissions       Submission[]
+  institutionAdmins InstitutionMember[]
+  auditEvents       AuditEvent[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Institution {
+  id        String          @id @default(cuid())
+  name      String
+  type      InstitutionType @default(COLLEGE)
+  website   String?
+  verified  Boolean         @default(false)
+  inboxSlug String          @unique
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  members     InstitutionMember[]
+  submissions Submission[]
+
+  @@map("institutions")
+}
+
+model InstitutionMember {
+  id            String   @id @default(cuid())
+  userId        String
+  institutionId String
+  createdAt     DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, institutionId])
+  @@map("institution_members")
+}
+
+model RecommendationRequest {
+  id             String        @id @default(cuid())
+  applicantId    String
+  recommenderId  String
+  purpose        Purpose       @default(ACADEMIC)
+  message        String?
+  deadline       DateTime?
+  status         RequestStatus @default(PENDING)
+  declineMessage String?
+  letterId       String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  respondedAt    DateTime?
+
+  applicant   User    @relation("ApplicantRequests", fields: [applicantId], references: [id], onDelete: Cascade)
+  recommender User    @relation("RecommenderRequests", fields: [recommenderId], references: [id], onDelete: Cascade)
+  letter      Letter? @relation(fields: [letterId], references: [id])
+
+  @@map("recommendation_requests")
+}
+
+model Letter {
+  id            String     @id @default(cuid())
+  recommenderId String
+  applicantId   String
+  fileUrl       String?
+  fileKey       String?
+  content       String?
+  visibility    Visibility @default(CONFIDENTIAL)
+  usageType     UsageType  @default(ONGOING)
+  validFrom     DateTime?
+  validUntil    DateTime?
+  usageCount    Int        @default(0)
+  maxUsage      Int?
+  revokedAt     DateTime?
+  ferpaWaived   Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  recommender User                    @relation("RecommenderLetters", fields: [recommenderId], references: [id], onDelete: Cascade)
+  applicant   User                    @relation("ApplicantLetters", fields: [applicantId], references: [id], onDelete: Cascade)
+  requests    RecommendationRequest[]
+  submissions Submission[]
+
+  @@map("letters")
+}
+
+model Submission {
+  id            String           @id @default(cuid())
+  applicantId   String
+  institutionId String
+  letterId      String
+  submittedAt   DateTime         @default(now())
+  viewedAt      DateTime?
+  status        SubmissionStatus @default(DELIVERED)
+
+  applicant   User        @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  letter      Letter      @relation(fields: [letterId], references: [id], onDelete: Cascade)
+
+  @@map("submissions")
+}
+
+model AuditEvent {
+  id        String   @id @default(cuid())
+  eventType String
+  actorId   String
+  targetId  String
+  metadata  Json     @default("{}")
+  ipAddress String?
+  timestamp DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@map("audit_events")
+}
