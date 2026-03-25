@@ -2,7 +2,10 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
 const publicPaths = ["/", "/auth/login", "/auth/register", "/auth/error", "/api/auth"];
-const institutionPaths = ["/institution"];
+// Paths that require INSTITUTION_ADMIN role
+const institutionAdminPaths = ["/institution"];
+// Institution paths accessible to any authenticated user (e.g. to set up a first institution)
+const institutionOpenPaths = ["/institution/new"];
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
@@ -18,7 +21,10 @@ export default auth((req) => {
 
   const roles = req.auth.user?.roles ?? [];
 
-  if (institutionPaths.some((p) => pathname.startsWith(p))) {
+  const isInstitutionAdminPath = institutionAdminPaths.some((p) => pathname.startsWith(p));
+  const isInstitutionOpenPath = institutionOpenPaths.some((p) => pathname.startsWith(p));
+
+  if (isInstitutionAdminPath && !isInstitutionOpenPath) {
     if (!roles.includes("INSTITUTION_ADMIN")) {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
